@@ -156,12 +156,12 @@ def _fetch_all_items(  # noqa: PLR0913
     return all_items, absent_count
 
 
-def _download_image(url: str, target_path: Path) -> None:
+def _download_image(http: httpx.Client, url: str, target_path: Path) -> None:
     """Download a single image from a URL to target_path."""
 
     def _call() -> None:
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        with httpx.stream("GET", url, follow_redirects=True, timeout=60.0) as response:
+        with http.stream("GET", url) as response:
             response.raise_for_status()
             with target_path.open("wb") as f:
                 for chunk in response.iter_bytes(chunk_size=8192):
@@ -180,12 +180,15 @@ def _save_images(
     downloaded = 0
     skipped = 0
 
-    with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        console=console,
-    ) as progress:
+    with (
+        httpx.Client(follow_redirects=True, timeout=60.0) as http,
+        Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            console=console,
+        ) as progress,
+    ):
         task = progress.add_task("Downloading...", total=len(image_items))
 
         for item in image_items:
@@ -197,7 +200,7 @@ def _save_images(
                 console.print(f"  [dim]Would download:[/dim] {target_path}")
                 downloaded += 1
             else:
-                _download_image(item.url, target_path)
+                _download_image(http, item.url, target_path)
                 downloaded += 1
 
             progress.update(task, advance=1)

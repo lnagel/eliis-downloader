@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from eliis_downloader.downloader import build_diary_text, collect_images, strip_html
+from eliis_downloader.downloader import _parse_uploaded_at, build_diary_text, collect_images, strip_html
 
 
 def test_strip_html_basic():
@@ -63,6 +63,26 @@ def _make_entry(date: str, status_type: int | None, *, images: list | None = Non
 
 def _make_image(filename: str = "abc.jpg", url: str = "https://cdn/abc.jpg") -> dict:
     return {"id": 1, "filename": filename, "url": url, "uploaded_at": "2026-03-25 10:00:00"}
+
+
+def test_collect_images_carries_uploaded_at():
+    entries = [_make_entry("2026-03-25", 1, images=[_make_image()])]
+    result = collect_images(entries, include_absent=False)
+    assert result[0].uploaded_at == "2026-03-25 10:00:00"
+
+
+def test_parse_uploaded_at_valid():
+    ts = _parse_uploaded_at("2026-03-25 10:00:00.000")
+    assert ts is not None
+    assert ts > 0
+
+
+def test_parse_uploaded_at_empty():
+    assert _parse_uploaded_at("") is None
+
+
+def test_parse_uploaded_at_invalid():
+    assert _parse_uploaded_at("not-a-date") is None
 
 
 def test_collect_images_present_day():

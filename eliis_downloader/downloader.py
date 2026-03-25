@@ -1,3 +1,4 @@
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -24,6 +25,20 @@ class FeedItem(NamedTuple):
     filename: str
     url: str
     diary_text: str
+    uploaded_at: str
+
+
+def _parse_uploaded_at(uploaded_at: str) -> float | None:
+    """Parse uploaded_at string to a Unix timestamp in Europe/Tallinn timezone."""
+    if not uploaded_at:
+        return None
+    try:
+        # Format: "2026-03-25 10:00:00.000" — truncate milliseconds for parsing
+        dt = datetime.strptime(uploaded_at[:19], "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007
+        dt = dt.replace(tzinfo=TIMEZONE)
+        return dt.timestamp()
+    except ValueError:
+        return None
 
 
 def strip_html(html: str) -> str:
@@ -74,11 +89,12 @@ def collect_images(
                     url = image.get("url")
                     filename = image.get("filename", "")
                     if url and filename:
-                        results.append(FeedItem(date, filename, url, diary_text))
+                        uploaded_at = image.get("uploaded_at", "")
+                        results.append(FeedItem(date, filename, url, diary_text, uploaded_at))
                         has_images = True
 
         if not has_images and diary_text:
-            results.append(FeedItem(date, "", "", diary_text))
+            results.append(FeedItem(date, "", "", diary_text, ""))
 
     return results
 
@@ -156,8 +172,8 @@ def _fetch_all_items(  # noqa: PLR0913
     return all_items, absent_count
 
 
-def _download_image(http: httpx.Client, url: str, target_path: Path) -> None:
-    """Download a single image from a URL to target_path."""
+def _download_image(http: httpx.Client, url: str, target_path: Path, *, uploaded_at: str) -> None:
+    """Download a single image from a URL to target_path, setting mtime to uploaded_at."""
 
     def _call() -> None:
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,6 +184,10 @@ def _download_image(http: httpx.Client, url: str, target_path: Path) -> None:
                     f.write(chunk)
 
     retry(_call)
+
+    timestamp = _parse_uploaded_at(uploaded_at)
+    if timestamp is not None:
+        os.utime(target_path, (timestamp, timestamp))
 
 
 def _save_images(
@@ -196,11 +216,14 @@ def _save_images(
 
             if target_path.exists():
                 skipped += 1
+                timestamp = _parse_uploaded_at(item.uploaded_at)
+                if timestamp is not None and target_path.stat().st_mtime != timestamp:
+                    os.utime(target_path, (timestamp, timestamp))
             elif dry_run:
                 console.print(f"  [dim]Would download:[/dim] {target_path}")
                 downloaded += 1
             else:
-                _download_image(http, item.url, target_path)
+                _download_image(http, item.url, target_path, uploaded_at=item.uploaded_at)
                 downloaded += 1
 
             progress.update(task, advance=1)

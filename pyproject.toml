@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "eliis-downloader"
 version = "0.1.0"
 description = "Download child photos from eliis.eu kindergarten management system"
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28",

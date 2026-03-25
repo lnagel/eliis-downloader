@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eliis-downloader"
+version = "0.1.0"
+description = "Download child photos from eliis.eu kindergarten management system"
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28",
+    "click>=8.1",
+    "rich>=13.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+eliis-download = "eliis_downloader.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.11",
+    "ty>=0.0.1a7",
+    "respx>=0.22",
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov=eliis_downloader --cov-fail-under=90 --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",       # pydocstyle - skip docstring enforcement
+    "COM812",  # missing trailing comma (conflicts with formatter)
+    "ISC001",  # single-line implicit string concatenation (conflicts with formatter)
+    "T201",    # print found - we use print for CLI output
+    "TC003",   # move stdlib import into TYPE_CHECKING - already handled where needed
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "PLR2004", "ANN", "ARG"]

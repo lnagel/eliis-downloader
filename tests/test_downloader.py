@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 
 from eliis_downloader.downloader import build_diary_text, collect_images, strip_html

@@ -1,20 +1,15 @@
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from html import unescape
-from typing import TYPE_CHECKING, NamedTuple
+from pathlib import Path
+from typing import Any, NamedTuple
 
 import httpx
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn
 
 from eliis_downloader.client import EliisClient, retry
-
-if TYPE_CHECKING:
-    from pathlib import Path
-    from typing import Any
 
 PRESENT_STATUS_TYPE = 1
 RECENT_DAYS = 30

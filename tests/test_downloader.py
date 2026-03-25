@@ -71,8 +71,8 @@ def test_collect_images_present_day():
     entries = [_make_entry("2026-03-25", 1, images=[_make_image()])]
     result = collect_images(entries, include_absent=False)
     assert len(result) == 1
-    assert result[0][0] == "2026-03-25"
-    assert result[0][1] == "abc.jpg"
+    assert result[0].date == "2026-03-25"
+    assert result[0].filename == "abc.jpg"
 
 
 def test_collect_images_absent_day_skipped():
@@ -97,15 +97,15 @@ def test_collect_images_text_only_entry():
     entries = [_make_entry("2026-03-25", 1, comment="<p>Fun day</p>")]
     result = collect_images(entries, include_absent=False)
     assert len(result) == 1
-    assert result[0][1] == ""  # no filename
-    assert "Fun day" in result[0][3]  # has diary text
+    assert result[0].filename == ""
+    assert "Fun day" in result[0].diary_text
 
 
 def test_collect_images_with_diary_text():
     entries = [_make_entry("2026-03-25", 1, images=[_make_image()], comment="<p>Art class</p>")]
     result = collect_images(entries, include_absent=False)
     assert len(result) == 1
-    assert "Art class" in result[0][3]
+    assert "Art class" in result[0].diary_text
 
 
 def test_file_path_construction(tmp_path: Path):

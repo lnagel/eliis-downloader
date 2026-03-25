@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from html import unescape
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import httpx
 from rich.console import Console
@@ -20,6 +20,13 @@ PRESENT_STATUS_TYPE = 1
 RECENT_DAYS = 30
 
 console = Console()
+
+
+class FeedItem(NamedTuple):
+    date: str
+    filename: str
+    url: str
+    diary_text: str
 
 
 def strip_html(html: str) -> str:
@@ -51,9 +58,9 @@ def collect_images(
     entries: list[dict[str, Any]],
     *,
     include_absent: bool,
-) -> list[tuple[str, str, str, str]]:
-    """Extract (date, filename, url, diary_text) tuples from guardian-feed entries."""
-    results: list[tuple[str, str, str, str]] = []
+) -> list[FeedItem]:
+    """Extract FeedItem tuples from guardian-feed entries."""
+    results: list[FeedItem] = []
     for entry in entries:
         date = entry["date"]
         diaries = entry.get("diaries", [])
@@ -70,11 +77,11 @@ def collect_images(
                     url = image.get("url")
                     filename = image.get("filename", "")
                     if url and filename:
-                        results.append((date, filename, url, diary_text))
+                        results.append(FeedItem(date, filename, url, diary_text))
                         has_images = True
 
         if not has_images and diary_text:
-            results.append((date, "", "", diary_text))
+            results.append(FeedItem(date, "", "", diary_text))
 
     return results
 
@@ -106,12 +113,12 @@ def _fetch_all_items(  # noqa: PLR0913
     *,
     include_absent: bool,
     full: bool,
-) -> tuple[list[tuple[str, str, str, str]], int]:
+) -> tuple[list[FeedItem], int]:
     """Paginate guardian-feed and collect all image items. Returns (items, absent_count)."""
     today = datetime.now().strftime("%Y-%m-%d")  # noqa: DTZ005
     cutoff_date = (datetime.now() - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")  # noqa: DTZ005
     current_date: str | None = today
-    all_items: list[tuple[str, str, str, str]] = []
+    all_items: list[FeedItem] = []
     absent_count = 0
 
     early_stopped = False
@@ -132,7 +139,7 @@ def _fetch_all_items(  # noqa: PLR0913
             all_items.extend(items)
 
             if not full and next_date is not None and next_date < cutoff_date:
-                page_images = [(date, filename) for date, filename, _url, _ in items if filename]
+                page_images = [(item.date, item.filename) for item in items if item.filename]
                 if page_images:
                     all_exist = all(
                         (output_dir / date[:7] / f"{date} {filename}").exists() for date, filename in page_images
@@ -166,7 +173,7 @@ def _download_image(url: str, target_path: Path) -> None:
 
 
 def _save_images(
-    image_items: list[tuple[str, str, str, str]],
+    image_items: list[FeedItem],
     output_dir: Path,
     *,
     dry_run: bool,
@@ -183,8 +190,8 @@ def _save_images(
     ) as progress:
         task = progress.add_task("Downloading...", total=len(image_items))
 
-        for date, filename, url, _text in image_items:
-            target_path = output_dir / date[:7] / f"{date} {filename}"
+        for item in image_items:
+            target_path = output_dir / item.date[:7] / f"{item.date} {item.filename}"
 
             if target_path.exists():
                 skipped += 1
@@ -192,7 +199,7 @@ def _save_images(
                 console.print(f"  [dim]Would download:[/dim] {target_path}")
                 downloaded += 1
             else:
-                _download_image(url, target_path)
+                _download_image(item.url, target_path)
                 downloaded += 1
 
             progress.update(task, advance=1)
@@ -229,11 +236,11 @@ def download_photos(  # noqa: PLR0913
         client, kindergarten_id, child_id, output_dir, include_absent=include_absent, full=full
     )
 
-    image_items = [(date, filename, url, text) for date, filename, url, text in all_items if filename]
+    image_items = [item for item in all_items if item.filename]
     text_items: dict[str, str] = {}
-    for date, _filename, _url, text in all_items:
-        if text and date not in text_items:
-            text_items[date] = text
+    for item in all_items:
+        if item.diary_text and item.date not in text_items:
+            text_items[item.date] = item.diary_text
 
     downloaded, skipped = _save_images(image_items, output_dir, dry_run=dry_run)
     _save_texts(text_items, output_dir, dry_run=dry_run)

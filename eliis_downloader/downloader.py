@@ -231,16 +231,29 @@ def _save_images(
     return downloaded, skipped
 
 
+def _text_file_timestamp(date: str) -> float:
+    """Return a Unix timestamp for 17:30 Estonian time on the given date."""
+    dt = datetime.strptime(date, "%Y-%m-%d").replace(hour=17, minute=30, tzinfo=TIMEZONE)
+    return dt.timestamp()
+
+
 def _save_texts(text_items: dict[str, str], output_dir: Path, *, dry_run: bool) -> None:
-    """Save diary text files."""
+    """Save diary text files, skipping writes when content is unchanged."""
     for date, text in text_items.items():
         month_dir = output_dir / date[:7]
         text_path = month_dir / f"{date}.txt"
-        if not dry_run:
-            month_dir.mkdir(parents=True, exist_ok=True)
-            text_path.write_text(text, encoding="utf-8")
-        elif not text_path.exists():
-            console.print(f"  [dim]Would write:[/dim] {text_path}")
+        if dry_run:
+            if not text_path.exists():
+                console.print(f"  [dim]Would write:[/dim] {text_path}")
+            continue
+        timestamp = _text_file_timestamp(date)
+        if text_path.exists() and text_path.read_text(encoding="utf-8") == text:
+            if text_path.stat().st_mtime != timestamp:
+                os.utime(text_path, (timestamp, timestamp))
+            continue
+        month_dir.mkdir(parents=True, exist_ok=True)
+        text_path.write_text(text, encoding="utf-8")
+        os.utime(text_path, (timestamp, timestamp))
 
 
 def download_photos(  # noqa: PLR0913

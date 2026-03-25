@@ -3,6 +3,7 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
+from eliis_downloader.client import EliisAuthError
 from eliis_downloader.downloader import run
 
 load_dotenv()
@@ -33,12 +34,15 @@ def main(  # noqa: PLR0913
     full: bool,
 ) -> None:
     """Download child photos from eliis.eu into OUTPUT_DIR, organized by year-month."""
-    run(
-        output_dir=output_dir,
-        email=email,
-        password=password,
-        include_absent=include_absent,
-        child_filter=child_filter,
-        dry_run=dry_run,
-        full=full,
-    )
+    try:
+        run(
+            output_dir=output_dir,
+            email=email,
+            password=password,
+            include_absent=include_absent,
+            child_filter=child_filter,
+            dry_run=dry_run,
+            full=full,
+        )
+    except EliisAuthError as e:
+        raise click.ClickException(str(e)) from None

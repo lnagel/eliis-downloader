@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from html import unescape
 from pathlib import Path
 from typing import Any, NamedTuple
+from zoneinfo import ZoneInfo
 
 import httpx
 from rich.console import Console
@@ -13,6 +14,7 @@ from eliis_downloader.client import EliisClient, retry
 
 PRESENT_STATUS_TYPE = 1
 RECENT_DAYS = 30
+TIMEZONE = ZoneInfo("Europe/Tallinn")
 
 console = Console()
 
@@ -110,8 +112,9 @@ def _fetch_all_items(  # noqa: PLR0913
     full: bool,
 ) -> tuple[list[FeedItem], int]:
     """Paginate guardian-feed and collect all image items. Returns (items, absent_count)."""
-    today = datetime.now().strftime("%Y-%m-%d")  # noqa: DTZ005
-    cutoff_date = (datetime.now() - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")  # noqa: DTZ005
+    now = datetime.now(tz=TIMEZONE)
+    today = now.strftime("%Y-%m-%d")
+    cutoff_date = (now - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")
     current_date: str | None = today
     all_items: list[FeedItem] = []
     absent_count = 0

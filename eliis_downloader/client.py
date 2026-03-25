@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from typing import Any, Self
 
 import httpx
+
+MAX_RETRIES = 5
+INITIAL_BACKOFF = 1.0
 
 BASE_URL = "https://api.eliis.eu"
 COMMON_HEADERS = {
@@ -15,6 +20,22 @@ COMMON_HEADERS = {
 
 class EliisAuthError(Exception):
     pass
+
+
+def retry[T](fn: Callable[[], T]) -> T:
+    """Retry a function up to MAX_RETRIES times with exponential backoff."""
+    last_exception: Exception = RuntimeError("unreachable")
+    for attempt in range(MAX_RETRIES):
+        try:
+            return fn()
+        except (httpx.HTTPStatusError, httpx.TransportError) as e:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500:  # noqa: PLR2004
+                raise
+            last_exception = e
+            if attempt < MAX_RETRIES - 1:
+                delay = INITIAL_BACKOFF * (2**attempt)
+                time.sleep(delay)
+    raise last_exception
 
 
 class EliisClient:
@@ -38,20 +59,26 @@ class EliisClient:
         return data
 
     def get_init(self) -> dict[str, Any]:
-        response = self._http.get("/api/common/init")
-        response.raise_for_status()
-        return response.json()
+        def _call() -> dict[str, Any]:
+            response = self._http.get("/api/common/init")
+            response.raise_for_status()
+            return response.json()
+
+        return retry(_call)
 
     def get_guardian_feed(
         self, kindergarten_id: int, child_id: int, date: str
     ) -> tuple[list[dict[str, Any]], str | None]:
-        response = self._http.get(
-            f"/api/kindergartens/{kindergarten_id}/children/{child_id}/guardian-feed",
-            params={"page": 1, "date": date},
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data.get("data", []), data.get("next_date")
+        def _call() -> tuple[list[dict[str, Any]], str | None]:
+            response = self._http.get(
+                f"/api/kindergartens/{kindergarten_id}/children/{child_id}/guardian-feed",
+                params={"page": 1, "date": date},
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("data", []), data.get("next_date")
+
+        return retry(_call)
 
     def close(self) -> None:
         self._http.close()

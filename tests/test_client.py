@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from eliis_downloader.client import BASE_URL, EliisAuthError, EliisClient
+from eliis_downloader.client import BASE_URL, EliisAuthError, EliisClient, retry
 
 
 @respx.mock
@@ -108,3 +108,59 @@ def test_client_sends_required_headers():
     request = route.calls[0].request
     assert request.headers["X-Requested-With"] == "XMLHttpRequest"
     assert request.headers["Origin"] == "https://eliis.eu"
+
+
+def test_retry_succeeds_after_failures(monkeypatch):
+    monkeypatch.setattr("eliis_downloader.client.INITIAL_BACKOFF", 0.0)
+    call_count = 0
+
+    def flaky():
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            raise httpx.TransportError("connection reset")
+        return "ok"
+
+    assert retry(flaky) == "ok"
+    assert call_count == 3
+
+
+def test_retry_raises_after_max_attempts(monkeypatch):
+    monkeypatch.setattr("eliis_downloader.client.INITIAL_BACKOFF", 0.0)
+
+    def always_fails():
+        raise httpx.TransportError("connection reset")
+
+    with pytest.raises(httpx.TransportError, match="connection reset"):
+        retry(always_fails)
+
+
+def test_retry_does_not_retry_client_errors():
+    def client_error():
+        raise httpx.HTTPStatusError(
+            "Not Found",
+            request=httpx.Request("GET", "https://example.com"),
+            response=httpx.Response(404),
+        )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        retry(client_error)
+
+
+@respx.mock
+def test_get_init_retries_on_server_error(monkeypatch):
+    monkeypatch.setattr("eliis_downloader.client.INITIAL_BACKOFF", 0.0)
+    call_count = 0
+
+    def side_effect(request):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            return httpx.Response(500, text="Internal Server Error")
+        return httpx.Response(200, json={"kindergartens": [], "children": []})
+
+    respx.get(f"{BASE_URL}/api/common/init").mock(side_effect=side_effect)
+    with EliisClient() as client:
+        data = client.get_init()
+    assert data == {"kindergartens": [], "children": []}
+    assert call_count == 2

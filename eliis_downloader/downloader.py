@@ -10,7 +10,7 @@ import httpx
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn
 
-from eliis_downloader.client import EliisClient
+from eliis_downloader.client import EliisClient, retry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -153,12 +153,16 @@ def _fetch_all_items(  # noqa: PLR0913
 
 def _download_image(url: str, target_path: Path) -> None:
     """Download a single image from a URL to target_path."""
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    with httpx.stream("GET", url, follow_redirects=True, timeout=60.0) as response:
-        response.raise_for_status()
-        with target_path.open("wb") as f:
-            for chunk in response.iter_bytes(chunk_size=8192):
-                f.write(chunk)
+
+    def _call() -> None:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with httpx.stream("GET", url, follow_redirects=True, timeout=60.0) as response:
+            response.raise_for_status()
+            with target_path.open("wb") as f:
+                for chunk in response.iter_bytes(chunk_size=8192):
+                    f.write(chunk)
+
+    retry(_call)
 
 
 def _save_images(

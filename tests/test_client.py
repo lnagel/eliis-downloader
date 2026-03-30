@@ -1,3 +1,5 @@
+from http.cookiejar import MozillaCookieJar
+
 import httpx
 import pytest
 import respx
@@ -6,11 +8,11 @@ from eliis_downloader.client import BASE_URL, EliisAuthError, EliisClient, retry
 
 
 @respx.mock
-def test_login_success():
+def test_login_success(tmp_path):
     respx.post(f"{BASE_URL}/api/auth/login").mock(
         return_value=httpx.Response(200, json={"user": {"id": 1, "fname": "Test"}})
     )
-    with EliisClient() as client:
+    with EliisClient(cookie_path=tmp_path / ".cookies") as client:
         result = client.login("test@example.com", "password123")
     assert result["user"]["id"] == 1
 
@@ -162,3 +164,73 @@ def test_get_init_retries_on_server_error(monkeypatch):
         data = client.get_init()
     assert data == {"kindergartens": [], "children": []}
     assert call_count == 2
+
+
+@respx.mock
+def test_login_saves_cookies(tmp_path):
+    cookie_path = tmp_path / ".cookies"
+    respx.post(f"{BASE_URL}/api/auth/login").mock(
+        return_value=httpx.Response(
+            200,
+            json={"user": {"id": 1}},
+            headers={"set-cookie": "eliis_csrf=jwt_token; Path=/; Domain=api.eliis.eu"},
+        )
+    )
+    with EliisClient(cookie_path=cookie_path) as client:
+        client.login("test@example.com", "pass")
+    assert cookie_path.exists()
+    jar = MozillaCookieJar()
+    jar.load(str(cookie_path), ignore_discard=True, ignore_expires=True)
+    assert any(c.name == "eliis_csrf" for c in jar)
+
+
+@respx.mock
+def test_has_session_with_valid_cookie(tmp_path):
+    cookie_path = tmp_path / ".cookies"
+
+    # First: login to save cookie
+    respx.post(f"{BASE_URL}/api/auth/login").mock(
+        return_value=httpx.Response(
+            200,
+            json={"user": {"id": 1}},
+            headers={"set-cookie": "eliis_csrf=jwt_token; Path=/; Domain=api.eliis.eu"},
+        )
+    )
+    respx.get(f"{BASE_URL}/api/common/init").mock(
+        return_value=httpx.Response(200, json={"kindergartens": [], "children": []})
+    )
+
+    with EliisClient(cookie_path=cookie_path) as client:
+        client.login("test@example.com", "pass")
+
+    # Second: new client loads cookie and has_session succeeds
+    with EliisClient(cookie_path=cookie_path) as client:
+        assert client.has_session()
+
+
+@respx.mock
+def test_has_session_with_expired_cookie(tmp_path):
+    cookie_path = tmp_path / ".cookies"
+
+    # First: login to save cookie
+    respx.post(f"{BASE_URL}/api/auth/login").mock(
+        return_value=httpx.Response(
+            200,
+            json={"user": {"id": 1}},
+            headers={"set-cookie": "eliis_csrf=jwt_token; Path=/; Domain=api.eliis.eu"},
+        )
+    )
+    with EliisClient(cookie_path=cookie_path) as client:
+        client.login("test@example.com", "pass")
+
+    # Second: init returns 401 → session invalid
+    respx.get(f"{BASE_URL}/api/common/init").mock(return_value=httpx.Response(401))
+    with EliisClient(cookie_path=cookie_path) as client:
+        assert not client.has_session()
+    assert not cookie_path.exists()
+
+
+def test_has_session_no_cookie_file(tmp_path):
+    cookie_path = tmp_path / ".cookies"
+    with EliisClient(cookie_path=cookie_path) as client:
+        assert not client.has_session()

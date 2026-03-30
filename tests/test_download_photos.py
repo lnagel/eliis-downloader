@@ -203,7 +203,16 @@ def test_run_full_flow(tmp_path):
         return_value=_feed_response([], next_date=None)
     )
 
-    run(tmp_path, "test@example.com", "pass", include_absent=False, child_filter=None, dry_run=True, full=False)
+    run(
+        tmp_path,
+        "test@example.com",
+        "pass",
+        include_absent=False,
+        child_filter=None,
+        dry_run=True,
+        full=False,
+        cookie_path=tmp_path / ".cookies",
+    )
 
 
 @respx.mock
@@ -213,7 +222,16 @@ def test_run_no_children(tmp_path):
         return_value=httpx.Response(200, json={"kindergartens": [], "children": []})
     )
 
-    run(tmp_path, "test@example.com", "pass", include_absent=False, child_filter=None, dry_run=True, full=False)
+    run(
+        tmp_path,
+        "test@example.com",
+        "pass",
+        include_absent=False,
+        child_filter=None,
+        dry_run=True,
+        full=False,
+        cookie_path=tmp_path / ".cookies",
+    )
 
 
 @respx.mock
@@ -236,4 +254,68 @@ def test_run_child_filter(tmp_path):
         return_value=_feed_response([], next_date=None)
     )
 
-    run(tmp_path, "test@example.com", "pass", include_absent=False, child_filter="Alice", dry_run=True, full=False)
+    run(
+        tmp_path,
+        "test@example.com",
+        "pass",
+        include_absent=False,
+        child_filter="Alice",
+        dry_run=True,
+        full=False,
+        cookie_path=tmp_path / ".cookies",
+    )
+
+
+@respx.mock
+def test_run_resumes_saved_session(tmp_path):
+    """When a valid cookie exists, run() skips login and reuses the session."""
+    cookie_path = tmp_path / ".cookies"
+
+    # First run: login and save cookie
+    respx.post(f"{BASE_URL}/api/auth/login").mock(
+        return_value=httpx.Response(
+            200,
+            json={"user": {"id": 1}},
+            headers={"set-cookie": "eliis_csrf=jwt_token; Path=/; Domain=api.eliis.eu"},
+        )
+    )
+    respx.get(f"{BASE_URL}/api/common/init").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "kindergartens": [{"id": 1, "name": "KG"}],
+                "children": [{"id": 10, "fname": "Test", "lname": "Child", "kindergarten_id": 1}],
+            },
+        )
+    )
+    respx.get(f"{BASE_URL}/api/kindergartens/1/children/10/guardian-feed").mock(
+        return_value=_feed_response([], next_date=None)
+    )
+
+    run(
+        tmp_path,
+        "test@example.com",
+        "pass",
+        include_absent=False,
+        child_filter=None,
+        dry_run=True,
+        full=False,
+        cookie_path=cookie_path,
+    )
+    assert cookie_path.exists()
+
+    # Second run: login endpoint should NOT be called again
+    login_route = respx.post(f"{BASE_URL}/api/auth/login")
+    calls_before = login_route.call_count
+
+    run(
+        tmp_path,
+        "test@example.com",
+        "pass",
+        include_absent=False,
+        child_filter=None,
+        dry_run=True,
+        full=False,
+        cookie_path=cookie_path,
+    )
+    assert login_route.call_count == calls_before

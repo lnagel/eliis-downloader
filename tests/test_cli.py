@@ -30,3 +30,14 @@ def test_cli_child_filter():
         result = runner.invoke(main, ["./photos", "--email", "t@e.com", "--password", "p", "--child", "Alice"])
     assert result.exit_code == 0
     assert mock_run.call_args.kwargs["child_filter"] == "Alice"
+
+
+def test_cli_cookies_option(tmp_path):
+    cookie_path = tmp_path / "my_cookies.txt"
+    runner = CliRunner()
+    with patch("eliis_downloader.cli.run") as mock_run:
+        result = runner.invoke(
+            main, ["./photos", "--email", "t@e.com", "--password", "p", "--cookies", str(cookie_path)]
+        )
+    assert result.exit_code == 0
+    assert mock_run.call_args.kwargs["cookie_path"] == cookie_path

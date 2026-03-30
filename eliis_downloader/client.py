@@ -1,5 +1,7 @@
 import time
 from collections.abc import Callable
+from http.cookiejar import MozillaCookieJar
+from pathlib import Path
 from typing import Any, Self
 
 import httpx
@@ -14,6 +16,8 @@ COMMON_HEADERS = {
     "Referer": "https://eliis.eu/",
     "Accept": "application/json",
 }
+
+DEFAULT_COOKIE_PATH = Path(".eliis_cookies.txt")
 
 
 class EliisAuthError(Exception):
@@ -37,13 +41,22 @@ def retry[T](fn: Callable[[], T]) -> T:
 
 
 class EliisClient:
-    def __init__(self) -> None:
+    def __init__(self, cookie_path: Path = DEFAULT_COOKIE_PATH) -> None:
+        self._cookie_path = cookie_path
+        self._jar = MozillaCookieJar()
+        if cookie_path.exists():
+            self._jar.load(str(cookie_path), ignore_discard=True, ignore_expires=True)
         self._http = httpx.Client(
             base_url=BASE_URL,
             headers=COMMON_HEADERS,
+            cookies=self._jar,
             follow_redirects=True,
             timeout=30.0,
         )
+
+    def _save_cookies(self) -> None:
+        """Persist current cookies to disk."""
+        self._jar.save(str(self._cookie_path), ignore_discard=True, ignore_expires=True)
 
     def login(self, email: str, password: str) -> dict[str, Any]:
         response = self._http.post("/api/auth/login", json={"username": email, "password": password, "platform": "web"})
@@ -54,7 +67,24 @@ class EliisClient:
         if isinstance(data, dict) and data.get("type"):
             msg = f"Login requires additional step: {data.get('type')}"
             raise EliisAuthError(msg)
+        self._save_cookies()
         return data
+
+    def has_session(self) -> bool:
+        """Check whether a saved session cookie is still valid."""
+        if not any(c.name == "eliis_csrf" for c in self._jar):
+            return False
+        try:
+            self.get_init()
+        except (httpx.HTTPStatusError, httpx.TransportError):
+            self._clear_cookies()
+            return False
+        return True
+
+    def _clear_cookies(self) -> None:
+        self._jar.clear()
+        if self._cookie_path.exists():
+            self._cookie_path.unlink()
 
     def get_init(self) -> dict[str, Any]:
         def _call() -> dict[str, Any]:

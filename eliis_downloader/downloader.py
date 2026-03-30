@@ -1,7 +1,7 @@
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from html import unescape
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -11,7 +11,7 @@ import httpx
 from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn
 
-from eliis_downloader.client import EliisClient, retry
+from eliis_downloader.client import DEFAULT_COOKIE_PATH, EliisClient, retry
 
 PRESENT_STATUS_TYPE = 1
 RECENT_DAYS = 30
@@ -29,13 +29,12 @@ class FeedItem(NamedTuple):
 
 
 def _parse_uploaded_at(uploaded_at: str) -> float | None:
-    """Parse uploaded_at string to a Unix timestamp in Europe/Tallinn timezone."""
+    """Parse uploaded_at string (UTC) to a Unix timestamp."""
     if not uploaded_at:
         return None
     try:
         # Format: "2026-03-25 10:00:00.000" — truncate milliseconds for parsing
-        dt = datetime.strptime(uploaded_at[:19], "%Y-%m-%d %H:%M:%S")  # noqa: DTZ007
-        dt = dt.replace(tzinfo=TIMEZONE)
+        dt = datetime.strptime(uploaded_at[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
         return dt.timestamp()
     except ValueError:
         return None
@@ -294,10 +293,14 @@ def run(  # noqa: PLR0913
     child_filter: str | None,
     dry_run: bool,
     full: bool,
+    cookie_path: Path = DEFAULT_COOKIE_PATH,
 ) -> None:
-    with EliisClient() as client:
-        console.print("[bold]Logging in to eliis.eu...[/bold]")
-        client.login(email, password)
+    with EliisClient(cookie_path=cookie_path) as client:
+        if client.has_session():
+            console.print("[bold]Resuming saved session...[/bold]")
+        else:
+            console.print("[bold]Logging in to eliis.eu...[/bold]")
+            client.login(email, password)
 
         init_data = client.get_init()
         children = init_data.get("children", [])

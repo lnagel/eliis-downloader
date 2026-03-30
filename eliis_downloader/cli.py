@@ -23,6 +23,14 @@ load_dotenv()
 @click.option("--child", "child_filter", default=None, help="Filter by child name (partial match)")
 @click.option("--dry-run", is_flag=True, default=False, help="Show what would be downloaded without downloading")
 @click.option("--full", is_flag=True, default=False, help="Fetch entire history (disable early-stop optimization)")
+@click.option(
+    "--cookies",
+    "cookie_path",
+    type=click.Path(path_type=Path),
+    default=".eliis_cookies.txt",
+    show_default=True,
+    help="Path to session cookie file",
+)
 def main(  # noqa: PLR0913
     output_dir: Path,
     email: str,
@@ -32,6 +40,7 @@ def main(  # noqa: PLR0913
     child_filter: str | None,
     dry_run: bool,
     full: bool,
+    cookie_path: Path,
 ) -> None:
     """Download child photos from eliis.eu into OUTPUT_DIR, organized by year-month."""
     try:
@@ -43,6 +52,7 @@ def main(  # noqa: PLR0913
             child_filter=child_filter,
             dry_run=dry_run,
             full=full,
+            cookie_path=cookie_path,
         )
     except EliisAuthError as e:
         raise click.ClickException(str(e)) from None
